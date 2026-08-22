@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>R3CON — Bug Bounty Framework</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230d1117'/><text y='24' font-size='22' fill='%2300ff88'>⬡</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ══════════════════════════════════════════════════════════
+       AUTH SCREEN
+  ══════════════════════════════════════════════════════════════ -->
+  <div id="auth-screen" class="auth-screen">
+    <div class="auth-bg-grid"></div>
+    <div class="auth-card">
+      <div class="auth-logo">
+        <span class="logo-hex">⬡</span>
+        <div>
+          <div class="logo-name">R3CON</div>
+          <div class="logo-tagline">Bug Bounty Intelligence Framework</div>
+        </div>
+      </div>
+
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tab-login" onclick="switchTab('login')">Sign In</button>
+        <button class="auth-tab" id="tab-register" onclick="switchTab('register')">Register</button>
+      </div>
+
+      <div id="form-login" class="auth-form">
+        <div class="field-group">
+          <label class="field-label">Email Address</label>
+          <input type="email" id="login-email" class="field-input" placeholder="hunter@example.com" autocomplete="email" />
+        </div>
+        <div class="field-group">
+          <label class="field-label">Password</label>
+          <input type="password" id="login-password" class="field-input" placeholder="••••••••••••" autocomplete="current-password" />
+        </div>
+        <div class="auth-actions">
+          <button class="btn-primary" onclick="doLogin()">
+            <span id="login-btn-text">Authenticate</span>
+          </button>
+          <button class="btn-ghost" onclick="doForgotPassword()">Forgot password?</button>
+        </div>
+      </div>
+
+      <div id="form-register" class="auth-form hidden">
+        <div class="field-group">
+          <label class="field-label">Display Name</label>
+          <input type="text" id="reg-name" class="field-input" placeholder="Your handle or name" />
+        </div>
+        <div class="field-group">
+          <label class="field-label">Email Address</label>
+          <input type="email" id="reg-email" class="field-input" placeholder="hunter@example.com" autocomplete="email" />
+        </div>
+        <div class="field-group">
+          <label class="field-label">Password <span class="hint">(min 8 chars)</span></label>
+          <input type="password" id="reg-password" class="field-input" placeholder="••••••••••••" autocomplete="new-password" />
+        </div>
+        <div class="auth-actions">
+          <button class="btn-primary" onclick="doRegister()">Create Account</button>
+        </div>
+      </div>
+
+      <div id="auth-message" class="auth-message hidden"></div>
+
+      <div class="auth-footer">
+        <span class="status-dot"></span> Encrypted · Data never leaves your Firebase
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════
+       CONFIG MODAL (first-time setup)
+  ══════════════════════════════════════════════════════════════ -->
+  <div id="config-modal" class="modal-overlay hidden">
+    <div class="modal-card config-modal-card">
+      <div class="modal-header">
+        <div class="modal-title">Firebase Configuration</div>
+        <div class="modal-subtitle">Your config is stored only in your browser's local storage — never in source code.</div>
+      </div>
+      <div class="config-warning">
+        <span>⚠</span> This is a one-time setup. Config values are never exposed in the source code or sent anywhere except Firebase directly.
+      </div>
+      <div class="config-grid">
+        <div class="field-group"><label class="field-label">API Key</label><input type="text" id="cfg-apiKey" class="field-input" placeholder="AIzaSy..." /></div>
+        <div class="field-group"><label class="field-label">Auth Domain</label><input type="text" id="cfg-authDomain" class="field-input" placeholder="your-app.firebaseapp.com" /></div>
+        <div class="field-group"><label class="field-label">Project ID</label><input type="text" id="cfg-projectId" class="field-input" placeholder="your-project-id" /></div>
+        <div class="field-group"><label class="field-label">Storage Bucket</label><input type="text" id="cfg-storageBucket" class="field-input" placeholder="your-app.appspot.com" /></div>
+        <div class="field-group"><label class="field-label">Messaging Sender ID</label><input type="text" id="cfg-messagingSenderId" class="field-input" placeholder="123456789" /></div>
+        <div class="field-group"><label class="field-label">App ID</label><input type="text" id="cfg-appId" class="field-input" placeholder="1:xxx:web:xxx" /></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-primary" onclick="saveFirebaseConfig()">Save & Initialize</button>
+        <button class="btn-ghost" onclick="clearConfig()">Clear Saved Config</button>
+      </div>
+      <div id="config-message" class="auth-message hidden"></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════
+       MAIN APP
+  ══════════════════════════════════════════════════════════════ -->
+  <div id="app" class="app hidden">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">
+          <span class="logo-hex-sm">⬡</span>
+          <span class="sidebar-brand">R3CON</span>
+        </div>
+        <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">WORKSPACE</div>
+        <button class="sidebar-btn active" id="nav-dashboard" onclick="showView('dashboard')">
+          <span class="nav-icon">◈</span> Dashboard
+        </button>
+        <button class="sidebar-btn" id="nav-projects" onclick="showView('projects')">
+          <span class="nav-icon">◫</span> Projects
+        </button>
+        <button class="sidebar-btn" id="nav-checklist" onclick="showView('checklist')">
+          <span class="nav-icon">✓</span> Checklist
+        </button>
+        <button class="sidebar-btn" id="nav-notes" onclick="showView('notes')">
+          <span class="nav-icon">◧</span> Notes
+        </button>
+        <button class="sidebar-btn" id="nav-dorks" onclick="showView('dorks')">
+          <span class="nav-icon">⌕</span> Dork Library
+        </button>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">ACCOUNT</div>
+        <button class="sidebar-btn" onclick="showView('settings')">
+          <span class="nav-icon">⚙</span> Settings
+        </button>
+        <button class="sidebar-btn danger-btn" onclick="doLogout()">
+          <span class="nav-icon">⏻</span> Sign Out
+        </button>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-user" id="sidebar-user-info"></div>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-content" id="main-content">
+
+      <!-- DASHBOARD -->
+      <div id="view-dashboard" class="view active">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">Dashboard</h1>
+            <p class="view-subtitle" id="dashboard-greeting">Welcome back, hunter.</p>
+          </div>
+          <button class="btn-primary btn-sm" onclick="showNewProjectModal()">+ New Project</button>
+        </div>
+        <div class="stats-grid" id="stats-grid">
+          <div class="stat-card"><div class="stat-val" id="stat-projects">—</div><div class="stat-label">Projects</div></div>
+          <div class="stat-card"><div class="stat-val accent-red" id="stat-critical">—</div><div class="stat-label">Critical Findings</div></div>
+          <div class="stat-card"><div class="stat-val accent-orange" id="stat-high">—</div><div class="stat-label">High Findings</div></div>
+          <div class="stat-card"><div class="stat-val accent-yellow" id="stat-medium">—</div><div class="stat-label">Medium Findings</div></div>
+          <div class="stat-card"><div class="stat-val accent-blue" id="stat-low">—</div><div class="stat-label">Low Findings</div></div>
+        </div>
+        <div class="recent-section">
+          <div class="section-title">Recent Projects</div>
+          <div id="recent-projects-list" class="projects-grid"></div>
+        </div>
+      </div>
+
+      <!-- PROJECTS -->
+      <div id="view-projects" class="view hidden">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">Projects</h1>
+            <p class="view-subtitle">Manage all your bug bounty engagements</p>
+          </div>
+          <button class="btn-primary btn-sm" onclick="showNewProjectModal()">+ New Project</button>
+        </div>
+        <div class="search-bar-row">
+          <input type="text" id="project-search" class="field-input search-input" placeholder="Search projects..." oninput="filterProjects()" />
+        </div>
+        <div id="projects-list" class="projects-grid"></div>
+      </div>
+
+      <!-- CHECKLIST VIEW (per-project) -->
+      <div id="view-checklist" class="view hidden">
+        <div class="view-header">
+          <div class="breadcrumb" id="checklist-breadcrumb"></div>
+          <h1 class="view-title" id="checklist-project-title">Checklist</h1>
+        </div>
+        <div class="checklist-progress-bar-wrapper">
+          <div class="progress-meta">
+            <span id="checklist-progress-label">0 / 0 completed</span>
+            <span id="checklist-progress-pct">0%</span>
+          </div>
+          <div class="progress-track"><div class="progress-fill" id="checklist-progress-fill"></div></div>
+        </div>
+        <div id="checklist-content"></div>
+      </div>
+
+      <!-- NOTES VIEW -->
+      <div id="view-notes" class="view hidden">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">Notes</h1>
+            <p class="view-subtitle">Scoped notes per project</p>
+          </div>
+          <button class="btn-primary btn-sm" onclick="saveNote()">Save Note</button>
+        </div>
+        <div class="notes-layout">
+          <div class="notes-sidebar">
+            <div class="notes-project-select-label">Project</div>
+            <select id="notes-project-select" class="field-input" onchange="loadNotesForProject()">
+              <option value="">— Select Project —</option>
+            </select>
+            <div class="notes-list" id="notes-list"></div>
+          </div>
+          <div class="notes-editor-area">
+            <input type="text" id="note-title" class="field-input note-title-input" placeholder="Note title..." />
+            <textarea id="note-body" class="note-textarea" placeholder="Start typing your notes here...&#10;&#10;Use this for:&#10;• Recon findings&#10;• POC steps&#10;• Observations&#10;• Attack surface notes"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- DORK LIBRARY -->
+      <div id="view-dorks" class="view hidden">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">Dork Library</h1>
+            <p class="view-subtitle">Auto-generated dorks — enter your target domain</p>
+          </div>
+        </div>
+        <div class="dork-input-row">
+          <input type="text" id="dork-target" class="field-input dork-target-input" placeholder="e.g. example.com" />
+          <button class="btn-primary" onclick="generateDorks()">Generate Dorks</button>
+        </div>
+        <div id="dork-output" class="dork-output"></div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div id="view-settings" class="view hidden">
+        <div class="view-header">
+          <h1 class="view-title">Settings</h1>
+        </div>
+        <div class="settings-section">
+          <div class="settings-card">
+            <div class="settings-card-title">Firebase Configuration</div>
+            <div class="settings-card-body">Your Firebase config is saved in localStorage only — never in code. You can update or clear it here.</div>
+            <div class="settings-actions">
+              <button class="btn-primary btn-sm" onclick="showConfigModal()">Update Config</button>
+              <button class="btn-ghost btn-sm danger-btn" onclick="if(confirm('Clear Firebase config? You will need to re-enter it.')) clearConfig()">Clear Config</button>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title">Account</div>
+            <div class="settings-card-body" id="settings-user-details">Loading…</div>
+            <div class="settings-actions">
+              <button class="btn-ghost btn-sm danger-btn" onclick="doLogout()">Sign Out</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════
+       NEW PROJECT MODAL
+  ══════════════════════════════════════════════════════════════ -->
+  <div id="new-project-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title" id="project-modal-title">New Project</div>
+      </div>
+      <div class="field-group"><label class="field-label">Program / Target Name</label><input type="text" id="proj-name" class="field-input" placeholder="e.g. HackerOne — Acme Corp" /></div>
+      <div class="field-group"><label class="field-label">Scope (domains / IPs)</label><input type="text" id="proj-scope" class="field-input" placeholder="*.example.com, api.example.com" /></div>
+      <div class="field-group"><label class="field-label">Platform</label>
+        <select id="proj-platform" class="field-input">
+          <option>HackerOne</option><option>Bugcrowd</option><option>Intigriti</option><option>Synack</option><option>YesWeHack</option><option>Private Program</option><option>Other</option>
+        </select>
+      </div>
+      <div class="field-group"><label class="field-label">Priority</label>
+        <select id="proj-priority" class="field-input">
+          <option value="high">🔴 High</option><option value="medium" selected>🟡 Medium</option><option value="low">🟢 Low</option>
+        </select>
+      </div>
+      <div class="field-group"><label class="field-label">Notes (optional)</label><textarea id="proj-notes" class="field-input" rows="3" placeholder="Brief notes about the program..."></textarea></div>
+      <div class="modal-actions">
+        <button class="btn-primary" onclick="saveProject()">Save Project</button>
+        <button class="btn-ghost" onclick="closeModal('new-project-modal')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════
+       FINDING MODAL
+  ══════════════════════════════════════════════════════════════ -->
+  <div id="finding-modal" class="modal-overlay hidden">
+    <div class="modal-card finding-modal-card">
+      <div class="modal-header">
+        <div class="modal-title">Add Finding</div>
+      </div>
+      <div class="field-group"><label class="field-label">Title</label><input type="text" id="finding-title" class="field-input" placeholder="e.g. IDOR in /api/users/:id" /></div>
+      <div class="findings-row">
+        <div class="field-group">
+          <label class="field-label">Severity</label>
+          <select id="finding-severity" class="field-input">
+            <option value="critical">🔴 Critical</option>
+            <option value="high">🟠 High</option>
+            <option value="medium" selected>🟡 Medium</option>
+            <option value="low">🟢 Low</option>
+            <option value="info">🔵 Informational</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Status</label>
+          <select id="finding-status" class="field-input">
+            <option value="open">Open</option>
+            <option value="submitted">Submitted</option>
+            <option value="triaged">Triaged</option>
+            <option value="accepted">Accepted</option>
+            <option value="duplicate">Duplicate</option>
+            <option value="na">N/A</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-group"><label class="field-label">URL / Endpoint</label><input type="text" id="finding-url" class="field-input" placeholder="https://api.example.com/users/123" /></div>
+      <div class="field-group"><label class="field-label">Description / PoC</label><textarea id="finding-desc" class="field-input finding-desc" rows="5" placeholder="Steps to reproduce, impact, PoC cURL commands..."></textarea></div>
+      <div class="field-group"><label class="field-label">CVSS Score (optional)</label><input type="number" id="finding-cvss" class="field-input" min="0" max="10" step="0.1" placeholder="7.5" /></div>
+      <div class="modal-actions">
+        <button class="btn-primary" onclick="saveFinding()">Save Finding</button>
+        <button class="btn-ghost" onclick="closeModal('finding-modal')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Firebase SDK -->
+  <script type="module" src="js/firebase-init.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
