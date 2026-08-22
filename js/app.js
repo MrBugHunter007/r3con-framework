@@ -600,21 +600,43 @@ window.openProjectNotes = function(pid) {
 
 window.loadNotesForProject = async function() {
   const pid = document.getElementById('notes-project-select').value;
-  document.getElementById('notes-list').innerHTML = '';
+  document.getElementById('notes-list').innerHTML =
+    '<div style="color:var(--text-3);font-size:12px;padding:8px 0">Loading…</div>';
   document.getElementById('note-title').value = '';
   document.getElementById('note-body').value = '';
   currentNoteId = null;
-  if (!pid || !DB || !currentUser) return;
+  if (!pid || !DB || !currentUser) {
+    document.getElementById('notes-list').innerHTML = '';
+    return;
+  }
 
   try {
-    const { m } = await getFirebaseModules().then(r => r.firestoreMod ? Promise.resolve({m:r.firestoreMod}) : import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js').then(mm => ({m:mm})));
+    const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
     const col = m.collection(DB, 'users', currentUser.uid, 'projects', pid, 'notes');
-    const q = m.query(col, m.orderBy('updatedAt', 'desc'));
-    const snap = await m.getDocs(q);
+
+    let snap;
+    try {
+      // Try ordered query first (requires Firestore index after first write)
+      const q = m.query(col, m.orderBy('updatedAt', 'desc'));
+      snap = await m.getDocs(q);
+    } catch (indexErr) {
+      // Fallback: unordered query — works without index
+      console.warn('Ordered query failed (index not ready), falling back:', indexErr.message);
+      snap = await m.getDocs(col);
+    }
+
     const notes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Sort client-side as fallback
+    notes.sort((a, b) => {
+      const ta = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : (a.updatedAt?.seconds || 0) * 1000;
+      const tb = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : (b.updatedAt?.seconds || 0) * 1000;
+      return tb - ta;
+    });
     renderNotesList(notes, pid);
   } catch (err) {
     console.error('Load notes error:', err);
+    document.getElementById('notes-list').innerHTML =
+      `<div style="color:var(--red);font-size:12px;padding:8px 0">Error loading notes: ${err.message}</div>`;
   }
 };
 
@@ -639,12 +661,22 @@ function renderNotesList(notes, pid) {
 
 window.openNote = async function(nid, pid) {
   currentNoteId = nid;
-  const { m } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-  const ref = m.doc(DB, 'users', currentUser.uid, 'projects', pid, 'notes', nid);
-  const snap = await m.getDoc(ref);
-  if (snap.exists()) {
-    document.getElementById('note-title').value = snap.data().title || '';
-    document.getElementById('note-body').value = snap.data().body || '';
+  // Highlight active note in sidebar
+  document.querySelectorAll('.note-item').forEach(el => el.classList.remove('active'));
+  const activeEl = document.querySelector(`.note-item[onclick*="${nid}"]`);
+  if (activeEl) activeEl.classList.add('active');
+
+  try {
+    const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const ref = m.doc(DB, 'users', currentUser.uid, 'projects', pid, 'notes', nid);
+    const snap = await m.getDoc(ref);
+    if (snap.exists()) {
+      document.getElementById('note-title').value = snap.data().title || '';
+      document.getElementById('note-body').value = snap.data().body || '';
+    }
+  } catch (err) {
+    console.error('Open note error:', err);
+    showToast('Could not load note: ' + err.message, 'error');
   }
 };
 
@@ -652,36 +684,43 @@ window.saveNote = async function() {
   const pid = document.getElementById('notes-project-select').value;
   if (!pid) { showToast('Select a project first.', 'error'); return; }
   const title = document.getElementById('note-title').value.trim() || 'Untitled';
-  const body = document.getElementById('note-body').value;
-  if (!DB || !currentUser) return;
-
-  const { m } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-  const col = m.collection(DB, 'users', currentUser.uid, 'projects', pid, 'notes');
+  const body = document.getElementById('note-body').value.trim();
+  if (!body && title === 'Untitled') { showToast('Write something before saving.', 'error'); return; }
+  if (!DB || !currentUser) { showToast('Not connected to Firebase.', 'error'); return; }
 
   try {
+    const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    const col = m.collection(DB, 'users', currentUser.uid, 'projects', pid, 'notes');
+    const now = m.serverTimestamp();
+
     if (currentNoteId) {
-      await m.updateDoc(m.doc(col, currentNoteId), { title, body, updatedAt: new Date() });
+      await m.updateDoc(m.doc(col, currentNoteId), { title, body, updatedAt: now });
     } else {
-      const ref = await m.addDoc(col, { title, body, createdAt: new Date(), updatedAt: new Date() });
+      const ref = await m.addDoc(col, { title, body, createdAt: now, updatedAt: now });
       currentNoteId = ref.id;
     }
     await loadNotesForProject();
     showToast('Note saved!', 'success');
   } catch (err) {
-    showToast('Error saving note: ' + err.message, 'error');
+    console.error('Save note error:', err);
+    showToast('Error saving: ' + err.message, 'error');
   }
 };
 
 window.deleteNote = async function(nid, pid, e) {
   e.stopPropagation();
   if (!confirm('Delete this note?')) return;
-  const { m } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-  await m.deleteDoc(m.doc(DB, 'users', currentUser.uid, 'projects', pid, 'notes', nid));
-  currentNoteId = null;
-  document.getElementById('note-title').value = '';
-  document.getElementById('note-body').value = '';
-  await loadNotesForProject();
-  showToast('Note deleted.', 'success');
+  try {
+    const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+    await m.deleteDoc(m.doc(DB, 'users', currentUser.uid, 'projects', pid, 'notes', nid));
+    currentNoteId = null;
+    document.getElementById('note-title').value = '';
+    document.getElementById('note-body').value = '';
+    await loadNotesForProject();
+    showToast('Note deleted.', 'success');
+  } catch (err) {
+    showToast('Error deleting note: ' + err.message, 'error');
+  }
 };
 
 // ────────────────────────────────────────────────────────────
@@ -796,12 +835,20 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
   });
 });
 
-// Keyboard: Escape closes modals
+// Keyboard: Escape closes modals, Ctrl+S saves note
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     document.querySelectorAll('.modal-overlay:not(.hidden)').forEach(m => {
       if (m.id !== 'config-modal') m.classList.add('hidden');
     });
+  }
+  // Ctrl+S or Cmd+S → save note when in Notes view
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    const notesView = document.getElementById('view-notes');
+    if (notesView && notesView.classList.contains('active')) {
+      e.preventDefault();
+      window.saveNote();
+    }
   }
 });
 
